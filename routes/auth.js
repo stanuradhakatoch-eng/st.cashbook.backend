@@ -93,7 +93,7 @@ router.post('/send-otp', async (req, res) => {
       message: isMobile ? `OTP sent to ${key}` : `OTP sent to ${key}. Check your inbox.`,
     });
   } catch (err) {
-    if (err.message === 'TWILIO_NOT_CONFIGURED' || err.message === 'RESEND_NOT_CONFIGURED') {
+    if (err.message === 'TWILIO_NOT_CONFIGURED') {
       // Dev Fallback logic
       const fallbackOtp = localOtp || generateOtp();
       if (isMobile) {
@@ -112,7 +112,7 @@ router.post('/send-otp', async (req, res) => {
     console.error(`[${isMobile ? 'SMS' : 'EMAIL'} ERROR] Stack:`, err.stack);
 
     // Dev fallback if the service fails but is "configured"
-    const hasService = isMobile ? !!process.env.TWILIO_ACCOUNT_SID : (!!process.env.RESEND_API_KEY || !!process.env.SMTP_USER);
+    const hasService = isMobile ? !!process.env.TWILIO_ACCOUNT_SID : !!process.env.SMTP_USER;
     if (!hasService || process.env.NODE_ENV !== 'production') {
        const fallbackOtp = localOtp || generateOtp();
        if (isMobile) store.saveOtp(key, fallbackOtp);

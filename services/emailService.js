@@ -2,42 +2,37 @@ const nodemailer = require('nodemailer');
 
 // ── Startup diagnostics ──
 console.log('[EMAIL-CONFIG] ──────────────────────────────────────');
-console.log('[EMAIL-CONFIG] RESEND_API_KEY:', process.env.RESEND_API_KEY ? `SET (${process.env.RESEND_API_KEY.slice(0,8)}...)` : '❌ NOT SET');
-console.log('[EMAIL-CONFIG] RESEND_FROM:   ', process.env.RESEND_FROM || '(not set — will use onboarding@resend.dev)');
-console.log('[EMAIL-CONFIG] SMTP_HOST:     ', process.env.SMTP_HOST || '(not set)');
-console.log('[EMAIL-CONFIG] SMTP_PORT:     ', process.env.SMTP_PORT || '(not set)');
-console.log('[EMAIL-CONFIG] SMTP_USER:     ', process.env.SMTP_USER ? `SET (${process.env.SMTP_USER})` : '❌ NOT SET');
-console.log('[EMAIL-CONFIG] SMTP_PASS:     ', process.env.SMTP_PASS ? 'SET (****)' : '❌ NOT SET');
-console.log('[EMAIL-CONFIG] NODE_ENV:      ', process.env.NODE_ENV || '(not set)');
-
-// ── Resend API (production — uses HTTPS, works on Render) ──
-const useResend = !!process.env.RESEND_API_KEY;
-let resend = null;
-if (useResend) {
-  const { Resend } = require('resend');
-  resend = new Resend(process.env.RESEND_API_KEY);
-  console.log('[EMAIL-CONFIG] ✅ Mode: RESEND API (HTTPS — works on Render)');
-} else {
-  console.log('[EMAIL-CONFIG] ⚠️  Mode: SMTP (port 587 — BLOCKED on Render!)');
-  console.log('[EMAIL-CONFIG] 💡 To fix on Render: add RESEND_API_KEY env var');
-}
+console.log('[EMAIL-CONFIG] SMTP_HOST:  ', process.env.SMTP_HOST || '(not set — default smtp.gmail.com)');
+console.log('[EMAIL-CONFIG] SMTP_PORT:  ', process.env.SMTP_PORT || '(not set — default 587)');
+console.log('[EMAIL-CONFIG] SMTP_USER:  ', process.env.SMTP_USER ? `SET (${process.env.SMTP_USER})` : '❌ NOT SET');
+console.log('[EMAIL-CONFIG] SMTP_PASS:  ', process.env.SMTP_PASS ? 'SET (****)' : '❌ NOT SET');
+console.log('[EMAIL-CONFIG] SMTP_FROM:  ', process.env.SMTP_FROM || process.env.SMTP_USER || '(not set)');
+console.log('[EMAIL-CONFIG] NODE_ENV:   ', process.env.NODE_ENV || '(not set)');
 console.log('[EMAIL-CONFIG] ──────────────────────────────────────');
 
-// ── SMTP Transporter (local dev — Gmail App Password) ──
+// ── Nodemailer SMTP Transporter ───────────────────────
+// Sab kuch env vars se configure hota hai:
+//   SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM
+// Gmail → host smtp.gmail.com, port 587, App Password
+// Kisi bhi transactional SMTP provider ke host/port/credentials yahan set kar sakte ho.
+const SMTP_PORT   = parseInt(process.env.SMTP_PORT, 10) || 587;
+const SMTP_SECURE = process.env.SMTP_SECURE
+  ? process.env.SMTP_SECURE === 'true'
+  : SMTP_PORT === 465; // 465 = implicit TLS, 587/2525 = STARTTLS
+
 let transporter = null;
 function getTransporter() {
   if (transporter) return transporter;
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT, 10) || 587,
-    secure: false,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
     tls: { rejectUnauthorized: false },
-    // Render SMTP ports block karta hai — timeout ke bina request hamesha
-    // ke liye "pending" reh jaati hai. In timeouts se ~10s me fail hoga.
+    // Timeout ke bina, agar port block ho to request hamesha "pending" reh jaati hai.
     connectionTimeout: 10000, // TCP connect
     greetingTimeout: 10000,   // server greeting
     socketTimeout: 15000,     // inactivity
@@ -45,26 +40,20 @@ function getTransporter() {
   return transporter;
 }
 
-// ── Connection verify on startup ───────────────────────
+// ── Connection verify on startup (best-effort) ─────────
 async function verifyConnection() {
-  if (useResend) {
-    console.log('✅ Resend email service ready (HTTPS API — production mode)');
-    return;
-  }
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn('❌ No email service configured!');
-    console.warn('   → For Render/production: set RESEND_API_KEY env var');
-    console.warn('   → For local dev: set SMTP_USER + SMTP_PASS env vars');
+    console.warn('❌ Email not configured — set SMTP_USER + SMTP_PASS (aur SMTP_HOST/PORT).');
     return;
   }
   try {
     await getTransporter().verify();
-    console.log('✅ SMTP email service ready (local dev mode)');
+    console.log('✅ Nodemailer SMTP email service ready.');
   } catch (err) {
     console.warn('⚠️  SMTP verify failed:', err.message);
-    if (err.message.includes('ENETUNREACH') || err.message.includes('ETIMEDOUT') || err.message.includes('Connection timeout')) {
-      console.warn('   🚫 SMTP port 587 is BLOCKED on this server (Render blocks SMTP)');
-      console.warn('   💡 Fix: Set RESEND_API_KEY env var in Render dashboard → Environment');
+    if (/ENETUNREACH|ETIMEDOUT|Connection timeout|EDNS|ESOCKET/i.test(err.message)) {
+      console.warn('   🚫 SMTP port shayad is server par block hai (jaise Render free tier SMTP block karta hai).');
+      console.warn('   💡 Aisa ho to alag SMTP host/port try karein (kai providers port 2525 offer karte hain).');
     }
   }
 }
@@ -209,74 +198,41 @@ function buildOtpText({ otp, recipient, expiryMins = 5 }) {
   return `CashBook - Login OTP\n\nHi ${recipient},\n\nYour OTP: ${otp}\n\nValid for ${expiryMins} minutes. Do NOT share this OTP.\n\n-- CashBook Team`.trim();
 }
 
-// ── Main send function ─────────────────────────────────
+// ── Main send function (Nodemailer only) ───────────────
 async function sendOtpEmail({ to, otp }) {
-  console.log(`[EMAIL] ── Sending OTP to: ${to} ──`);
-  console.log(`[EMAIL] Method: ${useResend ? 'RESEND API (HTTPS)' : 'SMTP (port 587)'}`);
+  console.log(`[EMAIL] ── Sending OTP to: ${to} via SMTP (${process.env.SMTP_HOST || 'smtp.gmail.com'}:${SMTP_PORT}) ──`);
+
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    throw new Error('Email not configured — SMTP_USER / SMTP_PASS missing.');
+  }
 
   const recipient = to;
   const subject   = `${otp} is your CashBook OTP — valid for 5 minutes`;
   const text      = buildOtpText({ otp, recipient });
   const html      = buildOtpHtml({ otp, recipient });
 
-  // ── Production: Resend API (HTTPS — works on Render) ──
-  if (useResend) {
-    const fromAddr = process.env.RESEND_FROM || 'onboarding@resend.dev';
-    console.log(`[EMAIL] Resend from: ${fromAddr} → to: ${to}`);
-    try {
-      const { data, error } = await resend.emails.send({
-        from: `CashBook <${fromAddr}>`,
-        to: [to],
-        subject,
-        text,
-        html,
-      });
-      if (error) {
-        const isSandbox = error.message && error.message.includes('only send testing emails');
-        if (isSandbox) {
-          console.warn(`[EMAIL] ⚠️  Resend sandbox restriction — falling back to SMTP for ${to}`);
-          // fall through to SMTP below
-        } else {
-          console.error(`[EMAIL] ❌ Resend API error:`, JSON.stringify(error));
-          throw new Error(error.message || 'Resend API error');
-        }
-      } else {
-        console.log(`[EMAIL] ✅ OTP sent via Resend to ${to} | Id: ${data.id}`);
-        return data;
-      }
-    } catch (err) {
-      const isSandbox = err.message && err.message.includes('only send testing emails');
-      if (isSandbox) {
-        console.warn(`[EMAIL] ⚠️  Resend sandbox restriction — falling back to SMTP for ${to}`);
-        // fall through to SMTP below
-      } else {
-        console.error(`[EMAIL] ❌ Resend send failed:`, err.message);
-        throw err;
-      }
-    }
-  }
-
-  // ── SMTP fallback: Gmail App Password (works for all recipients) ──
-  console.log(`[EMAIL] SMTP → ${process.env.SMTP_HOST}:${process.env.SMTP_PORT} (user: ${process.env.SMTP_USER})`);
   try {
+    const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER;
     const info = await getTransporter().sendMail({
-      from: `"CashBook" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+      from: `"CashBook" <${fromAddr}>`,
       to,
       subject,
       text,
       html,
+      replyTo: fromAddr,
+      // Deliverability hints — spam-score thoda kam karte hain
+      headers: {
+        'X-Entity-Ref-ID': `otp-${Date.now()}`,
+        'X-Auto-Response-Suppress': 'All',
+      },
     });
-    console.log(`[EMAIL] ✅ OTP sent via SMTP to ${to} | MessageId: ${info.messageId}`);
+    console.log(`[EMAIL] ✅ OTP sent via Nodemailer to ${to} | MessageId: ${info.messageId}`);
     return info;
   } catch (err) {
     console.error(`[EMAIL] ❌ SMTP send failed:`, err.message);
-    if (err.message.includes('ENETUNREACH') || err.message.includes('ETIMEDOUT') || err.message.includes('Connection timeout')) {
-      console.error(`[EMAIL] 🚫 SMTP port is BLOCKED on this server!`);
-      console.error(`[EMAIL] 💡 Fix: Add RESEND_API_KEY to Render Environment variables`);
-      console.error(`[EMAIL]    1. Go to resend.com → Sign up → Get API key`);
-      console.error(`[EMAIL]    2. Render Dashboard → Environment → Add RESEND_API_KEY=re_xxxxx`);
-      console.error(`[EMAIL]    3. Redeploy`);
-      throw new Error('Email failed: SMTP blocked on this server. Configure RESEND_API_KEY for production.');
+    if (/ENETUNREACH|ETIMEDOUT|Connection timeout|EDNS|ESOCKET/i.test(err.message)) {
+      console.error(`[EMAIL] 🚫 SMTP port shayad is server par block hai (Render free tier SMTP block karta hai).`);
+      console.error(`[EMAIL] 💡 Alag SMTP host/port try karein (kai providers port 2525 offer karte hain).`);
     }
     throw err;
   }
