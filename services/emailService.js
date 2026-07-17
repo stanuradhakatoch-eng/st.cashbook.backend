@@ -174,8 +174,8 @@ function buildOtpHtml({ otp, recipient, expiryMins = 5 }) {
                 &copy; 2024 CashBook &mdash; Powered by OBOPAY
               </p>
               <p style="font-size:11px;color:#D1D5DB;margin:0;">
-                <a href="#" style="color:#D1D5DB;text-decoration:none;">Privacy Policy</a> &nbsp;&bull;&nbsp;
-                <a href="#" style="color:#D1D5DB;text-decoration:none;">Terms of Service</a>
+                <a href="https://cashbook.in/privacy" style="color:#D1D5DB;text-decoration:none;">Privacy Policy</a> &nbsp;&bull;&nbsp;
+                <a href="https://cashbook.in/terms" style="color:#D1D5DB;text-decoration:none;">Terms of Service</a>
               </p>
             </td>
           </tr>
@@ -206,7 +206,8 @@ async function sendOtpEmail({ to, otp }) {
     throw new Error('Email not configured — SMTP_USER / SMTP_PASS missing.');
   }
 
-  const recipient = to;
+  // Greeting me pura email dikhana spammy lagta hai — @ se pehle wala hissa use karo
+  const recipient = String(to).split('@')[0];
   const subject   = `${otp} is your CashBook OTP — valid for 5 minutes`;
   const text      = buildOtpText({ otp, recipient });
   const html      = buildOtpHtml({ otp, recipient });
