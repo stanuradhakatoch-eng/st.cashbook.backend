@@ -11,10 +11,10 @@ console.log('[EMAIL-CONFIG] NODE_ENV:   ', process.env.NODE_ENV || '(not set)');
 console.log('[EMAIL-CONFIG] ──────────────────────────────────────');
 
 // ── Nodemailer SMTP Transporter ───────────────────────
-// Sab kuch env vars se configure hota hai:
+// Everything is configured via env vars:
 //   SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM
 // Gmail → host smtp.gmail.com, port 587, App Password
-// Kisi bhi transactional SMTP provider ke host/port/credentials yahan set kar sakte ho.
+// Any transactional SMTP provider's host/port/credentials can be set here.
 const SMTP_PORT   = parseInt(process.env.SMTP_PORT, 10) || 587;
 const SMTP_SECURE = process.env.SMTP_SECURE
   ? process.env.SMTP_SECURE === 'true'
@@ -32,7 +32,7 @@ function getTransporter() {
       pass: process.env.SMTP_PASS,
     },
     tls: { rejectUnauthorized: false },
-    // Timeout ke bina, agar port block ho to request hamesha "pending" reh jaati hai.
+    // Without a timeout, a blocked port keeps the request "pending" forever.
     connectionTimeout: 10000, // TCP connect
     greetingTimeout: 10000,   // server greeting
     socketTimeout: 15000,     // inactivity
@@ -43,7 +43,7 @@ function getTransporter() {
 // ── Connection verify on startup (best-effort) ─────────
 async function verifyConnection() {
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn('❌ Email not configured — set SMTP_USER + SMTP_PASS (aur SMTP_HOST/PORT).');
+    console.warn('❌ Email not configured — set SMTP_USER + SMTP_PASS (and SMTP_HOST/PORT).');
     return;
   }
   try {
@@ -52,8 +52,8 @@ async function verifyConnection() {
   } catch (err) {
     console.warn('⚠️  SMTP verify failed:', err.message);
     if (/ENETUNREACH|ETIMEDOUT|Connection timeout|EDNS|ESOCKET/i.test(err.message)) {
-      console.warn('   🚫 SMTP port shayad is server par block hai (jaise Render free tier SMTP block karta hai).');
-      console.warn('   💡 Aisa ho to alag SMTP host/port try karein (kai providers port 2525 offer karte hain).');
+      console.warn('   🚫 SMTP port appears blocked on this server (e.g. Render blocks outbound SMTP ports 25/465/587).');
+      console.warn('   💡 Use an SMTP provider that offers port 2525 (set SMTP_HOST/SMTP_PORT accordingly).');
     }
   }
 }
@@ -147,8 +147,8 @@ function buildOtpHtml({ otp, recipient, expiryMins = 5 }) {
                       <tr>
                         <td style="font-size:18px;vertical-align:top;padding-right:10px;">&#128737;</td>
                         <td style="font-size:13px;color:#991B1B;line-height:1.6;">
-                          <strong>Security Alert:</strong> CashBook kabhi bhi aapka OTP phone, email ya
-                          WhatsApp pe nahi maangega. Kisi ke saath share mat karo.
+                          <strong>Security Alert:</strong> CashBook will never ask for your OTP over phone,
+                          email or WhatsApp. Do not share it with anyone.
                         </td>
                       </tr>
                     </table>
@@ -159,8 +159,8 @@ function buildOtpHtml({ otp, recipient, expiryMins = 5 }) {
               <hr style="border:none;border-top:1px solid #E5E7EB;margin:0 0 24px;"/>
 
               <p style="font-size:13px;color:#9CA3AF;margin:0;line-height:1.6;">
-                Agar aapne login request nahi ki thi, toh is email ko ignore karein.
-                Aapka account safe hai.<br/><br/>
+                If you did not request this login, please ignore this email.
+                Your account is safe.<br/><br/>
                 Need help?
                 <a href="mailto:support@cashbook.in" style="color:#2563EB;text-decoration:none;">support@cashbook.in</a>
               </p>
@@ -206,7 +206,7 @@ async function sendOtpEmail({ to, otp }) {
     throw new Error('Email not configured — SMTP_USER / SMTP_PASS missing.');
   }
 
-  // Greeting me pura email dikhana spammy lagta hai — @ se pehle wala hissa use karo
+  // Showing the full email in the greeting looks spammy — use the part before "@"
   const recipient = String(to).split('@')[0];
   const subject   = `${otp} is your CashBook OTP — valid for 5 minutes`;
   const text      = buildOtpText({ otp, recipient });
@@ -221,7 +221,7 @@ async function sendOtpEmail({ to, otp }) {
       text,
       html,
       replyTo: fromAddr,
-      // Deliverability hints — spam-score thoda kam karte hain
+      // Deliverability hints — help lower the spam score
       headers: {
         'X-Entity-Ref-ID': `otp-${Date.now()}`,
         'X-Auto-Response-Suppress': 'All',
@@ -232,8 +232,8 @@ async function sendOtpEmail({ to, otp }) {
   } catch (err) {
     console.error(`[EMAIL] ❌ SMTP send failed:`, err.message);
     if (/ENETUNREACH|ETIMEDOUT|Connection timeout|EDNS|ESOCKET/i.test(err.message)) {
-      console.error(`[EMAIL] 🚫 SMTP port shayad is server par block hai (Render free tier SMTP block karta hai).`);
-      console.error(`[EMAIL] 💡 Alag SMTP host/port try karein (kai providers port 2525 offer karte hain).`);
+      console.error(`[EMAIL] 🚫 SMTP port appears blocked on this server (Render blocks outbound SMTP ports 25/465/587).`);
+      console.error(`[EMAIL] 💡 Use an SMTP provider that offers port 2525 (set SMTP_HOST/SMTP_PORT accordingly).`);
     }
     throw err;
   }
