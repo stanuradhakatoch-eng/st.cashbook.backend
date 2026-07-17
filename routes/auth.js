@@ -12,11 +12,21 @@ const JWT_SECRET = process.env.JWT_SECRET || 'cashbook_dev_secret_key_2024';
 const JWT_EXPIRY = '7d';
 const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
 
+const IS_PROD = process.env.NODE_ENV === 'production';
+
+// Cross-site cookie options.
+// Frontend aur backend alag *.onrender.com subdomains par hain (cross-site),
+// isliye prod me cookie ko SameSite=None + Secure hona zaroori hai warna
+// browser use cross-site fetch par bhejta hi nahi ("token missing" 401).
+const COOKIE_OPTS = {
+  httpOnly: true,
+  sameSite: IS_PROD ? 'none' : 'lax',
+  secure: IS_PROD, // SameSite=None ke liye Secure mandatory hai
+};
+
 function setAuthCookie(res, token) {
   res.cookie('cashbook_token', token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    ...COOKIE_OPTS,
     maxAge: COOKIE_MAX_AGE,
   });
 }
@@ -289,7 +299,7 @@ router.patch('/me', authMiddleware, async (req, res) => {
 // POST /api/auth/logout
 // ─────────────────────────────────────────────────────────
 router.post('/logout', (req, res) => {
-  res.clearCookie('cashbook_token', { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+  res.clearCookie('cashbook_token', COOKIE_OPTS);
   return res.json({ success: true });
 });
 

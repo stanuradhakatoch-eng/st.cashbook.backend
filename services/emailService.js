@@ -36,6 +36,11 @@ function getTransporter() {
       pass: process.env.SMTP_PASS,
     },
     tls: { rejectUnauthorized: false },
+    // Render SMTP ports block karta hai — timeout ke bina request hamesha
+    // ke liye "pending" reh jaati hai. In timeouts se ~10s me fail hoga.
+    connectionTimeout: 10000, // TCP connect
+    greetingTimeout: 10000,   // server greeting
+    socketTimeout: 15000,     // inactivity
   });
   return transporter;
 }
