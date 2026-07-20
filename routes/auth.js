@@ -111,16 +111,18 @@ router.post('/send-otp', async (req, res) => {
     console.error(`[${isMobile ? 'SMS' : 'EMAIL'} ERROR]`, err.message);
     console.error(`[${isMobile ? 'SMS' : 'EMAIL'} ERROR] Stack:`, err.stack);
 
-    // Dev fallback if the service fails but is "configured"
+    // Demo-OTP fallback ONLY when NO service is configured at all (pure local dev
+    // with no SMTP/Twilio set up). If a service IS configured but the send fails,
+    // return a real error — never leak the OTP in the API response.
     const hasService = isMobile ? !!process.env.TWILIO_ACCOUNT_SID : !!process.env.SMTP_USER;
-    if (!hasService || process.env.NODE_ENV !== 'production') {
+    if (!hasService) {
        const fallbackOtp = localOtp || generateOtp();
        if (isMobile) store.saveOtp(key, fallbackOtp);
-       console.log(`[DEV FALLBACK] Service error but returning demo OTP: ${fallbackOtp}`);
+       console.log(`[DEV FALLBACK] No ${isMobile ? 'SMS' : 'email'} service configured — returning demo OTP: ${fallbackOtp}`);
        return res.json({
          success: true,
          type,
-         message: `OTP generated (Service error fallback — check logs)`,
+         message: `OTP generated (no ${isMobile ? 'SMS' : 'email'} service configured — check server logs)`,
          _demo_otp: fallbackOtp,
        });
     }

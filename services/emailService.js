@@ -1,5 +1,10 @@
 const nodemailer = require('nodemailer');
 
+// Render (and some hosts) do NOT support outbound IPv6. Node often resolves the
+// SMTP host to an IPv6 address first, causing "connect ENETUNREACH <ipv6>".
+// Force IPv4 resolution first to avoid that.
+try { require('dns').setDefaultResultOrder('ipv4first'); } catch { /* older Node */ }
+
 // ── Startup diagnostics ──
 console.log('[EMAIL-CONFIG] ──────────────────────────────────────');
 console.log('[EMAIL-CONFIG] SMTP_HOST:  ', process.env.SMTP_HOST || '(not set — default smtp.gmail.com)');
