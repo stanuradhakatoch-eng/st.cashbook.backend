@@ -187,6 +187,7 @@ router.post('/verify-otp', async (req, res) => {
     setAuthCookie(res, token);
     return res.json({
       success: true,
+      token, // Bearer-token auth: frontend stores this and sends it in Authorization header
       user: { id: user.id, name: user.name, mobile: user.mobile, email: user.email },
     });
   } catch (err) {
